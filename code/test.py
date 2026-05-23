@@ -25,8 +25,7 @@ face_cascade = cv2.CascadeClassifier(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-model_path = os.path.join(BASE_DIR, "_mini_XCEPTION.102-0.66.hdf5")
-
+model_path = os.path.join(BASE_DIR, "fer.h5")
 print("Loading model from:", model_path)
 
 emotion_classifier = load_model(model_path, compile=False)

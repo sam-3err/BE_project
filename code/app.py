@@ -4,7 +4,9 @@ import test
 import cv2
 import numpy as np
 import base64
-
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, template_folder='templates')
 
 
