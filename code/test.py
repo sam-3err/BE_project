@@ -5,8 +5,7 @@ import threading
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-from tensorflow.keras.preprocessing.image import img_to_array
-import imutils
+
 import tflite_runtime.interpreter as tflite
 
 # =========================
@@ -58,7 +57,8 @@ EMOTIONS = [
 # =========================
 # STRESS CALCULATION FROM EMOTION
 # =========================
-
+def img_to_array(img):
+    return np.array(img, dtype='float32')
 def get_stress_from_emotions(preds):
     weights = np.array([1.0, 0.8, 1.0, 0.0, 0.8, 0.4, 0.1])
     stress_value = np.sum(preds * weights)
