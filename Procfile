@@ -1,1 +1,1 @@
-web: gunicorn --chdir code app:app
+web: gunicorn --chdir code app:app --timeout 120 --workers 1
