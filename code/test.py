@@ -8,7 +8,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 import imutils
-
+from tensorflow.keras.models import model_from_json
 
 # =========================
 # LOAD FACE DETECTOR
@@ -23,13 +23,14 @@ face_cascade = cv2.CascadeClassifier(
 # LOAD MODEL SAFELY
 # =========================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+json_path = os.path.join(BASE_DIR, "fer.json")
+weights_path = os.path.join(BASE_DIR, "fer.h5")
 
-model_path = os.path.join(BASE_DIR, "fer.h5")
-print("Loading model from:", model_path)
+with open(json_path, "r") as f:
+    model_json = f.read()
 
-emotion_classifier = load_model(model_path, compile=False)
-
+emotion_classifier = model_from_json(model_json)
+emotion_classifier.load_weights(weights_path)
 
 # =========================
 # GLOBAL VARIABLES
