@@ -34,11 +34,7 @@ def gen(camera):
 
 @app.route('/predict')
 def predict():
-
-    return Response(
-        gen(VideoCamera()),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
+    return jsonify({'error': 'Live webcam not supported on server'}), 410
 
 @app.route('/status')
 def status():
@@ -77,4 +73,6 @@ def upload_image():
 
 
 if __name__ == '__main__':
-    app.run(debug=False, threaded=True, use_reloader=False)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True, use_reloader=False)

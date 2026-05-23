@@ -162,7 +162,7 @@
         
         <div class="video-wrapper">
             <div class="video-container" style="position: relative;">
-                <img id="bg" class="video-stream" src="{{ url_for('predict') }}" alt="Live Webcam Stream" crossorigin="anonymous">
+               <video id="bg" class="video-stream" autoplay playsinline muted style="border-radius:12px; width:100%; height:100%; object-fit:cover;"></video>
                 <canvas id="snapshotCanvas" class="video-stream" style="display: none; width: 100%; height: 100%; object-fit: cover;"></canvas>
             </div>
         </div>
@@ -205,9 +205,24 @@
 
     <script>
         let isCaptured = false;
-        let isUploaded = false;
-        
-        let pollingInterval = setInterval(fetchStatus, 500);
+let isUploaded = false;
+let cameraStream = null;
+
+// Start browser camera
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const video = document.getElementById('bg');
+        video.srcObject = stream;
+        cameraStream = stream;
+    } catch (err) {
+        console.error("Camera error:", err);
+        alert("Could not access camera. Please allow camera permission.");
+    }
+}
+startCamera();
+
+let pollingInterval = setInterval(fetchStatus, 500);
 
         function updateMetrics(info) {
             document.getElementById('valEmotion').innerText = info.emotion || 'N/A';
@@ -306,31 +321,53 @@
         }
 
         function toggleCapture() {
-            const img = document.getElementById('bg');
-            const canvas = document.getElementById('snapshotCanvas');
-            const btn = document.getElementById('captureBtn');
+    const video = document.getElementById('bg');
+    const canvas = document.getElementById('snapshotCanvas');
+    const btn = document.getElementById('captureBtn');
 
-            if (!isCaptured && !isUploaded) {
-                canvas.width = img.naturalWidth || 640;
-                canvas.height = img.naturalHeight || 480;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                
-                img.style.display = 'none';
-                canvas.style.display = 'block';
-                
+    if (!isCaptured && !isUploaded) {
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Send captured frame to backend
+        canvas.toBlob(async (blob) => {
+            const formData = new FormData();
+            formData.append('image', blob, 'frame.jpg');
+            btn.innerHTML = '⏳ Processing...';
+            try {
+                const res = await fetch('/upload_image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.error) { alert(data.error); btn.innerHTML = '📸 Capture Live Frame'; return; }
+                const newImg = new Image();
+                newImg.onload = function() {
+                    canvas.width = newImg.width;
+                    canvas.height = newImg.height;
+                    canvas.getContext('2d').drawImage(newImg, 0, 0);
+                };
+                newImg.src = data.image;
+                updateMetrics(data.info);
                 btn.innerHTML = '🔄 Resume Live Video';
                 isCaptured = true;
-            } else {
-                img.style.display = 'block';
-                canvas.style.display = 'none';
-                
+            } catch(err) {
+                alert("Failed to process frame.");
                 btn.innerHTML = '📸 Capture Live Frame';
-                isCaptured = false;
-                isUploaded = false;
-                document.getElementById('imageUpload').value = '';
             }
-        }
+        }, 'image/jpeg');
+
+        video.style.display = 'none';
+        canvas.style.display = 'block';
+
+    } else {
+        video.style.display = 'block';
+        canvas.style.display = 'none';
+        btn.innerHTML = '📸 Capture Live Frame';
+        isCaptured = false;
+        isUploaded = false;
+        document.getElementById('imageUpload').value = '';
+    }
+}
 
         async function uploadImage(e) {
             const file = e.target.files[0];
