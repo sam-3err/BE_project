@@ -91,9 +91,9 @@ def emotion_finder(face_bb, frame):
 
     roi = frame[y:y+h, x:x+w]
     if roi.size == 0 or w <= 0 or h <= 0:
-        roi = cv2.resize(frame, (64, 64))
+        roi = cv2.resize(frame, (48, 48))
     else:
-        roi = cv2.resize(roi, (64, 64))
+        roi = cv2.resize(roi, (48, 48))
 
     roi = roi.astype("float") / 255.0
     roi = img_to_array(roi)
