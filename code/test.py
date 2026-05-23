@@ -5,10 +5,10 @@ import threading
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import model_from_json
 from tensorflow.keras.preprocessing.image import img_to_array
 import imutils
-from tensorflow.keras.models import model_from_json
+
 
 # =========================
 # LOAD FACE DETECTOR
@@ -23,14 +23,19 @@ face_cascade = cv2.CascadeClassifier(
 # LOAD MODEL SAFELY
 # =========================
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 json_path = os.path.join(BASE_DIR, "fer.json")
 weights_path = os.path.join(BASE_DIR, "fer.h5")
+
+print("Loading model from:", weights_path)
 
 with open(json_path, "r") as f:
     model_json = f.read()
 
 emotion_classifier = model_from_json(model_json)
 emotion_classifier.load_weights(weights_path)
+
 
 # =========================
 # GLOBAL VARIABLES
@@ -62,27 +67,23 @@ EMOTIONS = [
 # =========================
 
 def get_stress_from_emotions(preds):
-    # EMOTIONS = ["angry", "disgust", "scared", "happy", "sad", "surprised", "neutral"]
-    # Weights define how much stress each emotion indicates
     weights = np.array([1.0, 0.8, 1.0, 0.0, 0.8, 0.4, 0.1])
-    
-    # Calculate weighted sum
     stress_value = np.sum(preds * weights)
-    
+
     if stress_value >= 0.65:
         stress_label = "High Stress"
     elif stress_value >= 0.35:
         stress_label = "Moderate Stress"
     else:
         stress_label = "Low Stress"
-        
+
     return stress_value, stress_label
+
 
 def emotion_finder(face_bb, frame):
     x, y, w, h = face_bb
     img_h, img_w = frame.shape[:2]
 
-    # Clip coordinates to valid image bounds
     x = max(0, min(x, img_w - 1))
     y = max(0, min(y, img_h - 1))
     w = max(1, min(w, img_w - x))
@@ -94,34 +95,28 @@ def emotion_finder(face_bb, frame):
     else:
         roi = cv2.resize(roi, (64, 64))
 
-    # Ensure ROI is grayscale and has 1 channel (img_to_array handles this)
-
     roi = roi.astype("float") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=0)
 
-    # Use a threading lock to prevent concurrent prediction crashes in TensorFlow
     with model_lock:
         preds = emotion_classifier.predict(roi, verbose=0)[0]
-        
+
     label = EMOTIONS[preds.argmax()]
     stress_val, stress_lbl = get_stress_from_emotions(preds)
     probs_dict = {EMOTIONS[i].title(): float(preds[i]) for i in range(len(EMOTIONS))}
 
     return label, stress_val, stress_lbl, probs_dict
 
+
 # =========================
 # STATIC IMAGE PROCESSING (FOR UPLOADS)
 # =========================
 
 def process_image_array(frame):
-    # Resize frame to standard width to prevent OpenCV large-image vector boundary bugs
     frame = imutils.resize(frame, width=500)
-
-    # Convert to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # Detect faces
     with cascade_lock:
         faces = face_cascade.detectMultiScale(
             gray,
@@ -146,12 +141,9 @@ def process_image_array(frame):
                 "stress_label": stress_lbl,
                 "emotion_probs": probs_dict
             }
-            # Face rectangle
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            # Stop after first face for static upload
             break
     else:
-        # Fallback: treat the entire image as the face if Haar cascade fails
         h, w = gray.shape
         label, stress_val, stress_lbl, probs_dict = emotion_finder((0, 0, w, h), gray)
         info = {
@@ -160,7 +152,6 @@ def process_image_array(frame):
             "stress_label": stress_lbl,
             "emotion_probs": probs_dict
         }
-        # Draw a yellow border around the analyzed image region
         cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 255, 255), 2)
 
     return frame, info
@@ -173,33 +164,20 @@ def process_image_array(frame):
 class VideoCamera(object):
 
     def __init__(self, camera_index=0):
-
         print("Opening camera...")
-
-        # Windows webcam fix removed, try default backend
         self.video = cv2.VideoCapture(camera_index)
-
         if not self.video.isOpened():
             print("ERROR: Camera could not be opened")
 
     def __del__(self):
-
         if self.video.isOpened():
             self.video.release()
 
     def get_frame(self):
-
-        # print("Trying to read frame...")
-
         ret, frame = self.video.read()
 
-        # print("RET VALUE:", ret)
-
-        # Camera failed
         if not ret or frame is None:
-
             blank = np.zeros((500, 500, 3), dtype=np.uint8)
-
             cv2.putText(
                 blank,
                 "Camera not available",
@@ -209,21 +187,13 @@ class VideoCamera(object):
                 (0, 0, 255),
                 2
             )
-
             _, jpeg = cv2.imencode('.jpg', blank)
-
             return jpeg.tobytes()
 
-        # Flip frame
         frame = cv2.flip(frame, 1)
-
-        # Resize frame
         frame = imutils.resize(frame, width=500)
-
-        # Convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Detect faces
         with cascade_lock:
             faces = face_cascade.detectMultiScale(
                 gray,
@@ -234,8 +204,7 @@ class VideoCamera(object):
 
         for (x, y, w, h) in faces:
             label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
-            
-            # Update global state for live stream status polling
+
             global latest_stress_info
             latest_stress_info = {
                 "emotion": label.title(),
@@ -244,15 +213,7 @@ class VideoCamera(object):
                 "emotion_probs": probs_dict
             }
 
-            # Draw Face rectangle only (no text on video as per request)
-            cv2.rectangle(
-                frame,
-                (x, y),
-                (x + w, y + h),
-                (0, 255, 0),
-                2
-            )
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         _, jpeg = cv2.imencode('.jpg', frame)
-
         return jpeg.tobytes()
