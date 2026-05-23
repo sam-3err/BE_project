@@ -5,10 +5,9 @@ import threading
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-from tensorflow.keras.models import model_from_json
 from tensorflow.keras.preprocessing.image import img_to_array
 import imutils
-
+import tflite_runtime.interpreter as tflite
 
 # =========================
 # LOAD FACE DETECTOR
@@ -18,24 +17,18 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
 
-
 # =========================
-# LOAD MODEL SAFELY
+# LOAD TFLITE MODEL
 # =========================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+tflite_path = os.path.join(BASE_DIR, "fer.tflite")
+print("Loading tflite model from:", tflite_path)
 
-json_path = os.path.join(BASE_DIR, "fer.json")
-weights_path = os.path.join(BASE_DIR, "fer.h5")
-
-print("Loading model from:", weights_path)
-
-with open(json_path, "r") as f:
-    model_json = f.read()
-
-emotion_classifier = model_from_json(model_json)
-emotion_classifier.load_weights(weights_path)
-
+interpreter = tflite.Interpreter(model_path=tflite_path)
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
 # =========================
 # GLOBAL VARIABLES
@@ -95,12 +88,14 @@ def emotion_finder(face_bb, frame):
     else:
         roi = cv2.resize(roi, (48, 48))
 
-    roi = roi.astype("float") / 255.0
+    roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=0)
 
     with model_lock:
-        preds = emotion_classifier.predict(roi, verbose=0)[0]
+        interpreter.set_tensor(input_details[0]['index'], roi)
+        interpreter.invoke()
+        preds = interpreter.get_tensor(output_details[0]['index'])[0]
 
     label = EMOTIONS[preds.argmax()]
     stress_val, stress_lbl = get_stress_from_emotions(preds)
