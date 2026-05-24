@@ -57,12 +57,93 @@ EMOTIONS = [
     "neutral"
 ]
 
+EMPTY_INFO = {
+    "emotion": "No Face Detected",
+    "stress_value": 0.0,
+    "stress_label": "Unknown",
+    "emotion_probs": {e.title(): 0.0 for e in EMOTIONS}
+}
+
 
 # =========================
 # STRESS CALCULATION FROM EMOTION
 # =========================
 def img_to_array(img):
     return np.array(img, dtype='float32')
+
+
+def get_empty_info():
+    return {
+        "emotion": EMPTY_INFO["emotion"],
+        "stress_value": EMPTY_INFO["stress_value"],
+        "stress_label": EMPTY_INFO["stress_label"],
+        "emotion_probs": EMPTY_INFO["emotion_probs"].copy()
+    }
+
+
+def detect_faces(gray):
+    with cascade_lock:
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.08,
+            minNeighbors=4,
+            minSize=(35, 35),
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+
+    if len(faces) == 0:
+        with cascade_lock:
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(25, 25),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
+
+    return sorted(faces, key=lambda box: box[2] * box[3], reverse=True)
+
+
+def expand_face_box(face_bb, frame_shape, padding=0.18):
+    x, y, w, h = face_bb
+    img_h, img_w = frame_shape[:2]
+
+    pad_x = int(w * padding)
+    pad_y = int(h * padding)
+    x1 = max(0, x - pad_x)
+    y1 = max(0, y - pad_y)
+    x2 = min(img_w, x + w + pad_x)
+    y2 = min(img_h, y + h + pad_y)
+
+    return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
+
+
+def preprocess_face(gray, face_bb):
+    x, y, w, h = expand_face_box(face_bb, gray.shape)
+    roi = gray[y:y+h, x:x+w]
+    if roi.size == 0:
+        return None, (x, y, w, h), False
+
+    smile_found = False
+    if not smile_cascade.empty():
+        smiles = smile_cascade.detectMultiScale(
+            roi,
+            scaleFactor=1.7,
+            minNeighbors=20,
+            minSize=(25, 12)
+        )
+        smile_found = len(smiles) > 0
+
+    roi = cv2.equalizeHist(roi)
+    roi = cv2.resize(roi, (48, 48), interpolation=cv2.INTER_AREA)
+    roi = roi.astype("float32") / 255.0
+    roi = img_to_array(roi)
+    roi = np.expand_dims(roi, axis=-1)
+    roi = np.expand_dims(roi, axis=0)
+
+    return roi, (x, y, w, h), smile_found
+
+
 def get_stress_from_emotions(preds):
     weights = np.array([1.0, 0.8, 1.0, 0.0, 0.8, 0.4, 0.1])
     stress_value = np.sum(preds * weights)
@@ -77,35 +158,10 @@ def get_stress_from_emotions(preds):
     return stress_value, stress_label
 
 
-def emotion_finder(face_bb, frame):
-    x, y, w, h = face_bb
-    img_h, img_w = frame.shape[:2]
-
-    x = max(0, min(x, img_w - 1))
-    y = max(0, min(y, img_h - 1))
-    w = max(1, min(w, img_w - x))
-    h = max(1, min(h, img_h - y))
-
-    roi = frame[y:y+h, x:x+w]
-    smile_found = False
-    if roi.size > 0 and not smile_cascade.empty():
-        smiles = smile_cascade.detectMultiScale(
-            roi,
-            scaleFactor=1.7,
-            minNeighbors=20,
-            minSize=(25, 12)
-        )
-        smile_found = len(smiles) > 0
-
-    if roi.size == 0 or w <= 0 or h <= 0:
-        roi = cv2.resize(frame, (48, 48))
-    else:
-        roi = cv2.resize(roi, (48, 48))
-
-    roi = roi.astype("float32") / 255.0
-    roi = img_to_array(roi)
-    roi = np.expand_dims(roi, axis=-1)
-    roi = np.expand_dims(roi, axis=0)
+def emotion_finder(face_bb, gray):
+    roi, _, smile_found = preprocess_face(gray, face_bb)
+    if roi is None:
+        return None
 
     with model_lock:
         interpreter.set_tensor(input_details[0]['index'], roi)
@@ -124,6 +180,20 @@ def emotion_finder(face_bb, frame):
     return label, stress_val, stress_lbl, probs_dict
 
 
+def info_from_face(face_bb, gray):
+    result = emotion_finder(face_bb, gray)
+    if result is None:
+        return get_empty_info()
+
+    label, stress_val, stress_lbl, probs_dict = result
+    return {
+        "emotion": label.title(),
+        "stress_value": float(stress_val),
+        "stress_label": stress_lbl,
+        "emotion_probs": probs_dict
+    }
+
+
 # =========================
 # STATIC IMAGE PROCESSING (FOR UPLOADS)
 # =========================
@@ -132,42 +202,24 @@ def process_image_array(frame):
     frame = imutils.resize(frame, width=500)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    with cascade_lock:
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30)
-        )
-
-    info = {
-        "emotion": "No Face Detected",
-        "stress_value": 0.0,
-        "stress_label": "Unknown",
-        "emotion_probs": {e.title(): 0.0 for e in EMOTIONS}
-    }
+    faces = detect_faces(gray)
+    info = get_empty_info()
 
     if len(faces) > 0:
-        for (x, y, w, h) in faces:
-            label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
-            info = {
-                "emotion": label.title(),
-                "stress_value": float(stress_val),
-                "stress_label": stress_lbl,
-                "emotion_probs": probs_dict
-            }
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            break
+        x, y, w, h = faces[0]
+        info = info_from_face((x, y, w, h), gray)
+        rx, ry, rw, rh = expand_face_box((x, y, w, h), gray.shape)
+        cv2.rectangle(frame, (rx, ry), (rx + rw, ry + rh), (0, 255, 0), 2)
     else:
-        h, w = gray.shape
-        label, stress_val, stress_lbl, probs_dict = emotion_finder((0, 0, w, h), gray)
-        info = {
-            "emotion": label.title(),
-            "stress_value": float(stress_val),
-            "stress_label": stress_lbl,
-            "emotion_probs": probs_dict
-        }
-        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 255, 255), 2)
+        cv2.putText(
+            frame,
+            "No face detected",
+            (18, 36),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 255, 255),
+            2
+        )
 
     return frame, info
 
@@ -189,6 +241,7 @@ class VideoCamera(object):
             self.video.release()
 
     def get_frame(self):
+        global latest_stress_info
         ret, frame = self.video.read()
 
         if not ret or frame is None:
@@ -209,26 +262,16 @@ class VideoCamera(object):
         frame = imutils.resize(frame, width=500)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        with cascade_lock:
-            faces = face_cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(30, 30)
-            )
+        faces = detect_faces(gray)
 
-        for (x, y, w, h) in faces:
-            label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
+        if len(faces) == 0:
+            latest_stress_info = get_empty_info()
 
-            global latest_stress_info
-            latest_stress_info = {
-                "emotion": label.title(),
-                "stress_value": float(stress_val),
-                "stress_label": stress_lbl,
-                "emotion_probs": probs_dict
-            }
+        for (x, y, w, h) in faces[:1]:
+            latest_stress_info = info_from_face((x, y, w, h), gray)
 
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            rx, ry, rw, rh = expand_face_box((x, y, w, h), gray.shape)
+            cv2.rectangle(frame, (rx, ry), (rx + rw, ry + rh), (0, 255, 0), 2)
 
         _, jpeg = cv2.imencode('.jpg', frame)
         return jpeg.tobytes()

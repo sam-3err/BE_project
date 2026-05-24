@@ -64,7 +64,12 @@ def stress_from_probs(probs):
 
 
 def average_infos(infos):
-    valid_infos = [info for info in infos if info.get("emotion_probs")]
+    valid_infos = [
+        info for info in infos
+        if info.get("emotion_probs")
+        and info.get("emotion") != "No Face Detected"
+        and sum(info.get("emotion_probs", {}).values()) > 0.01
+    ]
     if not valid_infos:
         return infos[-1] if infos else {
             "emotion": "No Face Detected",
