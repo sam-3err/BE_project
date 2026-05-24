@@ -292,31 +292,46 @@
             stressChart.update();
         }
 
-        function toggleCapture() {
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function canvasToBlob(canvas) {
+            return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+        }
+
+        async function captureFrameBurst(video, canvas) {
+            canvas.width = video.videoWidth || 1280;
+            canvas.height = video.videoHeight || 720;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            const formData = new FormData();
+            for (let i = 0; i < 5; i++) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const blob = await canvasToBlob(canvas);
+                formData.append('images', blob, `frame-${i}.jpg`);
+                await sleep(120);
+            }
+            return formData;
+        }
+
+        async function toggleCapture() {
             const video = document.getElementById('bg');
             const canvas = document.getElementById('snapshotCanvas');
             const btn = document.getElementById('captureBtn');
 
             if (!isCaptured && !isUploaded) {
-                // Capture frame from live video
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                const ctx = canvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                video.style.display = 'none';
-                canvas.style.display = 'block';
                 btn.innerHTML = '⏳ Processing...';
                 isCaptured = true;
 
-                // Send to backend
-                canvas.toBlob(async (blob) => {
-                    const formData = new FormData();
-                    formData.append('image', blob, 'frame.jpg');
-                    try {
-                        const res = await fetch('/upload_image', { method: 'POST', body: formData });
+                try {
+                    const formData = await captureFrameBurst(video, canvas);
+                    video.style.display = 'none';
+                    canvas.style.display = 'block';
+
+                    const res = await fetch('/upload_image', { method: 'POST', body: formData });
                         const data = await res.json();
                         if (data.error) {
                             alert(data.error);
@@ -337,7 +352,6 @@
                         alert("Failed to process frame.");
                         resumeCamera();
                     }
-                }, 'image/jpeg', 0.95);
 
             } else {
                 resumeCamera();

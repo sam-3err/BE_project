@@ -42,24 +42,76 @@ def predict():
 def status():
     return jsonify(test.latest_stress_info)
 
+
+def stress_from_probs(probs):
+    weights = {
+        "Angry": 1.0,
+        "Disgust": 0.8,
+        "Scared": 1.0,
+        "Happy": 0.0,
+        "Sad": 0.8,
+        "Surprised": 0.4,
+        "Neutral": 0.1
+    }
+    stress_value = sum(probs.get(emotion, 0.0) * weight for emotion, weight in weights.items())
+    if stress_value >= 0.65:
+        stress_label = "High Stress"
+    elif stress_value >= 0.35:
+        stress_label = "Moderate Stress"
+    else:
+        stress_label = "Low Stress"
+    return stress_value, stress_label
+
+
+def average_infos(infos):
+    valid_infos = [info for info in infos if info.get("emotion_probs")]
+    if not valid_infos:
+        return infos[-1] if infos else {
+            "emotion": "No Face Detected",
+            "stress_value": 0.0,
+            "stress_label": "Unknown",
+            "emotion_probs": {}
+        }
+
+    emotions = valid_infos[0]["emotion_probs"].keys()
+    avg_probs = {
+        emotion: float(np.mean([info["emotion_probs"].get(emotion, 0.0) for info in valid_infos]))
+        for emotion in emotions
+    }
+    emotion = max(avg_probs, key=avg_probs.get)
+    stress_value, stress_label = stress_from_probs(avg_probs)
+    return {
+        "emotion": emotion,
+        "stress_value": float(stress_value),
+        "stress_label": stress_label,
+        "emotion_probs": avg_probs
+    }
+
+
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
     try:
-        if 'image' not in request.files:
+        files = request.files.getlist('images') or request.files.getlist('image')
+        if not files:
             return jsonify({'error': 'No image uploaded'})
-        
-        file = request.files['image']
-        # Read the image array using frombuffer (modern alternative to fromstring)
-        npimg = np.frombuffer(file.read(), np.uint8)
-        img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-        
-        if img is None:
+
+        processed_img = None
+        infos = []
+        for file in files:
+            npimg = np.frombuffer(file.read(), np.uint8)
+            img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+            if img is None:
+                continue
+
+            processed_img, info = process_image_array(img)
+            infos.append(info)
+
+        if processed_img is None or not infos:
             return jsonify({'error': 'Invalid image file or format'})
 
-        # Process
-        processed_img, info = process_image_array(img)
+        info = average_infos(infos)
         
-        # Encode back to base64
         _, buffer = cv2.imencode('.jpg', processed_img)
         img_b64 = base64.b64encode(buffer).decode('utf-8')
         
