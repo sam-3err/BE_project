@@ -199,7 +199,14 @@
         // Start browser camera
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
                 const video = document.getElementById('bg');
                 video.srcObject = stream;
                 cameraStream = stream;
@@ -294,7 +301,10 @@
                 // Capture frame from live video
                 canvas.width = video.videoWidth || 640;
                 canvas.height = video.videoHeight || 480;
-                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
                 video.style.display = 'none';
                 canvas.style.display = 'block';
@@ -327,7 +337,7 @@
                         alert("Failed to process frame.");
                         resumeCamera();
                     }
-                }, 'image/jpeg');
+                }, 'image/jpeg', 0.95);
 
             } else {
                 resumeCamera();

@@ -89,6 +89,7 @@ def emotion_finder(face_bb, frame):
     else:
         roi = cv2.resize(roi, (48, 48))
 
+    roi = cv2.equalizeHist(roi)
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=-1)
