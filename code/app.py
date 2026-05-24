@@ -79,17 +79,28 @@ def average_infos(infos):
         }
 
     emotions = valid_infos[0]["emotion_probs"].keys()
-    avg_probs = {
-        emotion: float(np.mean([info["emotion_probs"].get(emotion, 0.0) for info in valid_infos]))
-        for emotion in emotions
-    }
+    weights = np.array([
+        max(0.05, float(info.get("confidence", 0.0)))
+        for info in valid_infos
+    ])
+    weights = weights / weights.sum()
+
+    avg_probs = {}
+    for emotion in emotions:
+        values = np.array([
+            info["emotion_probs"].get(emotion, 0.0)
+            for info in valid_infos
+        ])
+        avg_probs[emotion] = float(np.sum(values * weights))
+
     emotion = max(avg_probs, key=avg_probs.get)
     stress_value, stress_label = stress_from_probs(avg_probs)
     return {
         "emotion": emotion,
         "stress_value": float(stress_value),
         "stress_label": stress_label,
-        "emotion_probs": avg_probs
+        "emotion_probs": avg_probs,
+        "confidence": float(max(info.get("confidence", 0.0) for info in valid_infos))
     }
 
 

@@ -301,6 +301,10 @@
         }
 
         async function captureFrameBurst(video, canvas) {
+            if (!video.videoWidth || !video.videoHeight) {
+                await sleep(300);
+            }
+
             canvas.width = video.videoWidth || 1280;
             canvas.height = video.videoHeight || 720;
             const ctx = canvas.getContext('2d');
@@ -308,11 +312,11 @@
             ctx.imageSmoothingQuality = 'high';
 
             const formData = new FormData();
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 8; i++) {
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const blob = await canvasToBlob(canvas);
                 formData.append('images', blob, `frame-${i}.jpg`);
-                await sleep(120);
+                await sleep(100);
             }
             return formData;
         }
