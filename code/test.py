@@ -148,15 +148,16 @@ def process_image_array(frame):
     }
 
     if len(faces) > 0:
-        x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
-        label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
-        info = {
-            "emotion": label.title(),
-            "stress_value": float(stress_val),
-            "stress_label": stress_lbl,
-            "emotion_probs": probs_dict
-        }
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        for (x, y, w, h) in faces:
+            label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
+            info = {
+                "emotion": label.title(),
+                "stress_value": float(stress_val),
+                "stress_label": stress_lbl,
+                "emotion_probs": probs_dict
+            }
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            break
     else:
         h, w = gray.shape
         label, stress_val, stress_lbl, probs_dict = emotion_finder((0, 0, w, h), gray)
@@ -205,10 +206,29 @@ class VideoCamera(object):
             return jpeg.tobytes()
 
         frame = cv2.flip(frame, 1)
-        frame, info = process_image_array(frame)
+        frame = imutils.resize(frame, width=500)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        global latest_stress_info
-        latest_stress_info = info
+        with cascade_lock:
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(30, 30)
+            )
+
+        for (x, y, w, h) in faces:
+            label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
+
+            global latest_stress_info
+            latest_stress_info = {
+                "emotion": label.title(),
+                "stress_value": float(stress_val),
+                "stress_label": stress_lbl,
+                "emotion_probs": probs_dict
+            }
+
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         _, jpeg = cv2.imencode('.jpg', frame)
         return jpeg.tobytes()
