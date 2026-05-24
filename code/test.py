@@ -85,53 +85,28 @@ def get_empty_info():
 
 
 def detect_faces(gray):
+    min_face = max(28, int(min(gray.shape[:2]) * 0.12))
     equalized = cv2.equalizeHist(gray)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
-    min_face = max(24, int(min(gray.shape[:2]) * 0.10))
-    detected = []
-
-    variants = (gray, equalized, clahe)
-    params = (
-        (1.08, 5, min_face),
-        (1.05, 4, max(22, min_face - 8)),
-        (1.03, 3, max(20, min_face - 12)),
-    )
 
     with cascade_lock:
-        for image in variants:
-            for scale, neighbors, min_size in params:
-                faces = face_cascade.detectMultiScale(
-                    image,
-                    scaleFactor=scale,
-                    minNeighbors=neighbors,
-                    minSize=(min_size, min_size),
-                    flags=cv2.CASCADE_SCALE_IMAGE
-                )
-                detected.extend(faces)
+        faces = face_cascade.detectMultiScale(
+            equalized,
+            scaleFactor=1.08,
+            minNeighbors=5,
+            minSize=(min_face, min_face),
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
 
-        if not profile_cascade.empty():
-            for image in variants[:2]:
-                faces = profile_cascade.detectMultiScale(
-                    image,
-                    scaleFactor=1.06,
-                    minNeighbors=4,
-                    minSize=(min_face, min_face),
-                    flags=cv2.CASCADE_SCALE_IMAGE
-                )
-                detected.extend(faces)
+        if len(faces) == 0:
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.05,
+                minNeighbors=4,
+                minSize=(24, 24),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
 
-                flipped = cv2.flip(image, 1)
-                flipped_faces = profile_cascade.detectMultiScale(
-                    flipped,
-                    scaleFactor=1.06,
-                    minNeighbors=4,
-                    minSize=(min_face, min_face),
-                    flags=cv2.CASCADE_SCALE_IMAGE
-                )
-                img_w = gray.shape[1]
-                detected.extend([(img_w - x - w, y, w, h) for (x, y, w, h) in flipped_faces])
-
-    return merge_face_boxes(detected)
+    return merge_face_boxes(faces)
 
 
 def box_iou(a, b):
@@ -231,29 +206,17 @@ def predict_roi(roi):
 
 
 def emotion_finder(face_bb, gray):
-    inference_rois = []
-    smile_found = False
-
-    for padding, equalize, flip in (
-        (0.12, False, False),
-        (0.18, False, False),
-        (0.16, True, False),
-    ):
-        roi, _, current_smile_found = preprocess_face(
-            gray,
-            face_bb,
-            padding=padding,
-            equalize=equalize,
-            flip=flip
-        )
-        if roi is not None:
-            inference_rois.append(roi)
-            smile_found = smile_found or current_smile_found
-
-    if not inference_rois:
+    roi, _, smile_found = preprocess_face(
+        gray,
+        face_bb,
+        padding=0.16,
+        equalize=True,
+        flip=False
+    )
+    if roi is None:
         return None
 
-    preds = np.mean([predict_roi(roi) for roi in inference_rois], axis=0)
+    preds = predict_roi(roi)
 
     if smile_found:
         preds = preds.copy()

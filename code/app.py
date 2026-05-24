@@ -114,7 +114,7 @@ def upload_image():
         processed_img = None
         infos = []
         errors = []
-        for index, file in enumerate(files):
+        for index, file in enumerate(files[:2]):
             try:
                 npimg = np.frombuffer(file.read(), np.uint8)
                 img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)

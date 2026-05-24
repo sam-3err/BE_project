@@ -311,13 +311,10 @@
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
 
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const blob = await canvasToBlob(canvas);
             const formData = new FormData();
-            for (let i = 0; i < 4; i++) {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const blob = await canvasToBlob(canvas);
-                formData.append('images', blob, `frame-${i}.jpg`);
-                await sleep(120);
-            }
+            formData.append('image', blob, 'frame.jpg');
             return formData;
         }
 
@@ -336,7 +333,10 @@
                     canvas.style.display = 'block';
 
                     const res = await fetch('/upload_image', { method: 'POST', body: formData });
-                        const data = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+                        const data = await res.json().catch(async () => {
+                            const text = await res.text().catch(() => '');
+                            return { error: `Server error ${res.status}${text ? ': ' + text.slice(0, 120) : ''}` };
+                        });
                         if (!res.ok && !data.error) {
                             data.error = `Server error ${res.status}`;
                         }
@@ -396,7 +396,10 @@
 
             try {
                 const res = await fetch('/upload_image', { method: 'POST', body: formData });
-                const data = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+                const data = await res.json().catch(async () => {
+                    const text = await res.text().catch(() => '');
+                    return { error: `Server error ${res.status}${text ? ': ' + text.slice(0, 120) : ''}` };
+                });
                 if (!res.ok && !data.error) {
                     data.error = `Server error ${res.status}`;
                 }
