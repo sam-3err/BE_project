@@ -89,11 +89,12 @@ def emotion_finder(face_bb, frame):
     roi = frame[y:y+h, x:x+w]
     smile_found = False
     if roi.size > 0 and not smile_cascade.empty():
+        mouth_roi = roi[int(h * 0.45):h, :]
         smiles = smile_cascade.detectMultiScale(
-            roi,
-            scaleFactor=1.7,
-            minNeighbors=20,
-            minSize=(25, 12)
+            mouth_roi,
+            scaleFactor=1.3,
+            minNeighbors=8,
+            minSize=(max(20, w // 5), max(10, h // 12))
         )
         smile_found = len(smiles) > 0
 
@@ -114,7 +115,7 @@ def emotion_finder(face_bb, frame):
 
     if smile_found:
         preds = preds.copy()
-        preds[EMOTIONS.index("happy")] += 0.45
+        preds[EMOTIONS.index("happy")] += 0.90
         preds = preds / np.sum(preds)
 
     label = EMOTIONS[preds.argmax()]
