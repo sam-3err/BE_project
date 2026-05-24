@@ -98,17 +98,35 @@ def crop_face(frame, face_bb):
     return cv2.resize(roi, (48, 48), interpolation=cv2.INTER_AREA)
 
 
-def emotion_finder(face_bb, frame):
-    roi = crop_face(frame, face_bb)
+def prepare_input(roi):
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=-1)
-    roi = np.expand_dims(roi, axis=0)
+    return np.expand_dims(roi, axis=0)
 
+
+def predict_emotion(roi):
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    variants = [
+        roi,
+        cv2.flip(roi, 1),
+        clahe.apply(roi)
+    ]
+
+    predictions = []
     with model_lock:
-        interpreter.set_tensor(input_details[0]['index'], roi)
-        interpreter.invoke()
-        preds = interpreter.get_tensor(output_details[0]['index'])[0]
+        for variant in variants:
+            interpreter.set_tensor(input_details[0]['index'], prepare_input(variant))
+            interpreter.invoke()
+            predictions.append(interpreter.get_tensor(output_details[0]['index'])[0])
+
+    preds = np.mean(predictions, axis=0)
+    return preds / np.sum(preds)
+
+
+def emotion_finder(face_bb, frame):
+    roi = crop_face(frame, face_bb)
+    preds = predict_emotion(roi)
 
     label = EMOTIONS[preds.argmax()]
     stress_val, stress_lbl = get_stress_from_emotions(preds)
