@@ -35,6 +35,8 @@ interpreter = tflite.Interpreter(model_path=tflite_path)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
+MODEL_INPUT_HEIGHT = int(input_details[0]['shape'][1])
+MODEL_INPUT_WIDTH = int(input_details[0]['shape'][2])
 
 # =========================
 # GLOBAL VARIABLES
@@ -174,8 +176,9 @@ def preprocess_face(gray, face_bb, padding=0.16, equalize=False, flip=False):
     if flip:
         roi = cv2.flip(roi, 1)
 
-    interpolation = cv2.INTER_AREA if max(roi.shape[:2]) > 48 else cv2.INTER_CUBIC
-    roi = cv2.resize(roi, (48, 48), interpolation=interpolation)
+    target_size = (MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
+    interpolation = cv2.INTER_AREA if max(roi.shape[:2]) > max(target_size) else cv2.INTER_CUBIC
+    roi = cv2.resize(roi, target_size, interpolation=interpolation)
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=-1)

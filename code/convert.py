@@ -1,34 +1,32 @@
+import os
+
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
 
-# Rebuild model architecture manually
-model = Sequential()
-model.add(Conv2D(64, (3,3), activation='relu', input_shape=(48,48,1)))
-model.add(Conv2D(64, (3,3), activation='relu'))
-model.add(MaxPooling2D(pool_size=(2,2)))
-model.add(Dropout(0.5))
-model.add(Conv2D(64, (3,3), activation='relu'))
-model.add(Conv2D(64, (3,3), activation='relu'))
-model.add(MaxPooling2D(pool_size=(2,2)))
-model.add(Dropout(0.5))
-model.add(Conv2D(128, (3,3), activation='relu'))
-model.add(Conv2D(128, (3,3), activation='relu'))
-model.add(MaxPooling2D(pool_size=(2,2)))
-model.add(Flatten())
-model.add(Dense(1024, activation='relu'))
-model.add(Dropout(0.2))
-model.add(Dense(1024, activation='relu'))
-model.add(Dropout(0.2))
-model.add(Dense(7, activation='softmax'))
 
-model.load_weights('fer.h5')
-print('Model loaded!')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SOURCE_MODEL = os.path.join(BASE_DIR, "_mini_XCEPTION.102-0.66.hdf5")
+OUTPUT_MODEL = os.path.join(BASE_DIR, "fer.tflite")
 
-converter = tf.lite.TFLiteConverter.from_keras_model(model)
-tflite_model = converter.convert()
-print('Converted!')
 
-with open('fer.tflite', 'wb') as f:
-    f.write(tflite_model)
-print('Done! fer.tflite created!')
+def main():
+    # This checkpoint has better validation accuracy than the old fer.h5 model.
+    # Run this file again whenever you need to regenerate the deployed TFLite model.
+    print("Loading improved model from:", SOURCE_MODEL)
+    model = tf.keras.models.load_model(SOURCE_MODEL, compile=False)
+    print("Model input shape:", model.input_shape)
+    print("Model output shape:", model.output_shape)
+
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    tflite_model = converter.convert()
+
+    with open(OUTPUT_MODEL, "wb") as f:
+        f.write(tflite_model)
+
+    print("Saved improved TFLite model to:", OUTPUT_MODEL)
+
+
+if __name__ == "__main__":
+    main()
