@@ -91,6 +91,7 @@ def emotion_finder(face_bb, frame):
 
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
+    roi = np.expand_dims(roi, axis=-1)
     roi = np.expand_dims(roi, axis=0)
 
     with model_lock:
