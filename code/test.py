@@ -236,10 +236,8 @@ def emotion_finder(face_bb, gray):
 
     for padding, equalize, flip in (
         (0.12, False, False),
-        (0.16, False, False),
-        (0.20, False, False),
+        (0.18, False, False),
         (0.16, True, False),
-        (0.16, False, True),
     ):
         roi, _, current_smile_found = preprocess_face(
             gray,

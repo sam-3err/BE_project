@@ -109,26 +109,36 @@ def upload_image():
     try:
         files = request.files.getlist('images') or request.files.getlist('image')
         if not files:
-            return jsonify({'error': 'No image uploaded'})
+            return jsonify({'error': 'No image uploaded'}), 400
 
         processed_img = None
         infos = []
-        for file in files:
-            npimg = np.frombuffer(file.read(), np.uint8)
-            img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+        errors = []
+        for index, file in enumerate(files):
+            try:
+                npimg = np.frombuffer(file.read(), np.uint8)
+                img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-            if img is None:
-                continue
+                if img is None:
+                    errors.append(f"Frame {index + 1}: invalid image")
+                    continue
 
-            processed_img, info = process_image_array(img)
-            infos.append(info)
+                processed_img, info = process_image_array(img)
+                infos.append(info)
+            except Exception as frame_error:
+                errors.append(f"Frame {index + 1}: {frame_error}")
+                print(f"UPLOAD FRAME ERROR {index + 1}:", frame_error)
 
         if processed_img is None or not infos:
-            return jsonify({'error': 'Invalid image file or format'})
+            message = errors[-1] if errors else 'Invalid image file or format'
+            return jsonify({'error': message}), 400
 
         info = average_infos(infos)
         
-        _, buffer = cv2.imencode('.jpg', processed_img)
+        ok, buffer = cv2.imencode('.jpg', processed_img)
+        if not ok:
+            return jsonify({'error': 'Could not encode processed image'}), 500
+
         img_b64 = base64.b64encode(buffer).decode('utf-8')
         
         return jsonify({
@@ -139,7 +149,7 @@ def upload_image():
         import traceback
         print("UPLOAD ERROR TRACEBACK:")
         traceback.print_exc()
-        return jsonify({'error': f"Internal Server Error: {str(e)}"})
+        return jsonify({'error': f"Internal Server Error: {str(e)}"}), 500
 
 
 if __name__ == '__main__':

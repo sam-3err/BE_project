@@ -312,11 +312,11 @@
             ctx.imageSmoothingQuality = 'high';
 
             const formData = new FormData();
-            for (let i = 0; i < 8; i++) {
+            for (let i = 0; i < 4; i++) {
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const blob = await canvasToBlob(canvas);
                 formData.append('images', blob, `frame-${i}.jpg`);
-                await sleep(100);
+                await sleep(120);
             }
             return formData;
         }
@@ -336,7 +336,10 @@
                     canvas.style.display = 'block';
 
                     const res = await fetch('/upload_image', { method: 'POST', body: formData });
-                        const data = await res.json();
+                        const data = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+                        if (!res.ok && !data.error) {
+                            data.error = `Server error ${res.status}`;
+                        }
                         if (data.error) {
                             alert(data.error);
                             resumeCamera();
@@ -393,7 +396,10 @@
 
             try {
                 const res = await fetch('/upload_image', { method: 'POST', body: formData });
-                const data = await res.json();
+                const data = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+                if (!res.ok && !data.error) {
+                    data.error = `Server error ${res.status}`;
+                }
 
                 if (data.error) {
                     alert(data.error);
