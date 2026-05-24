@@ -16,6 +16,9 @@ import tflite_runtime.interpreter as tflite
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
+smile_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_smile.xml'
+)
 
 # =========================
 # LOAD TFLITE MODEL
@@ -84,12 +87,21 @@ def emotion_finder(face_bb, frame):
     h = max(1, min(h, img_h - y))
 
     roi = frame[y:y+h, x:x+w]
+    smile_found = False
+    if roi.size > 0 and not smile_cascade.empty():
+        smiles = smile_cascade.detectMultiScale(
+            roi,
+            scaleFactor=1.7,
+            minNeighbors=20,
+            minSize=(25, 12)
+        )
+        smile_found = len(smiles) > 0
+
     if roi.size == 0 or w <= 0 or h <= 0:
         roi = cv2.resize(frame, (48, 48))
     else:
         roi = cv2.resize(roi, (48, 48))
 
-    roi = cv2.equalizeHist(roi)
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=-1)
@@ -99,6 +111,11 @@ def emotion_finder(face_bb, frame):
         interpreter.set_tensor(input_details[0]['index'], roi)
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]
+
+    if smile_found:
+        preds = preds.copy()
+        preds[EMOTIONS.index("happy")] += 0.45
+        preds = preds / np.sum(preds)
 
     label = EMOTIONS[preds.argmax()]
     stress_val, stress_lbl = get_stress_from_emotions(preds)
