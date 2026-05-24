@@ -16,9 +16,6 @@ import tflite_runtime.interpreter as tflite
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
-smile_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + 'haarcascade_smile.xml'
-)
 
 # =========================
 # LOAD TFLITE MODEL
@@ -77,7 +74,7 @@ def get_stress_from_emotions(preds):
     return stress_value, stress_label
 
 
-def emotion_finder(face_bb, frame):
+def crop_face(frame, face_bb):
     x, y, w, h = face_bb
     img_h, img_w = frame.shape[:2]
 
@@ -86,23 +83,23 @@ def emotion_finder(face_bb, frame):
     w = max(1, min(w, img_w - x))
     h = max(1, min(h, img_h - y))
 
-    roi = frame[y:y+h, x:x+w]
-    smile_found = False
-    if roi.size > 0 and not smile_cascade.empty():
-        mouth_roi = roi[int(h * 0.45):h, :]
-        smiles = smile_cascade.detectMultiScale(
-            mouth_roi,
-            scaleFactor=1.3,
-            minNeighbors=8,
-            minSize=(max(20, w // 5), max(10, h // 12))
-        )
-        smile_found = len(smiles) > 0
+    pad_x = int(w * 0.12)
+    pad_top = int(h * 0.18)
+    pad_bottom = int(h * 0.12)
+    x1 = max(0, x - pad_x)
+    y1 = max(0, y - pad_top)
+    x2 = min(img_w, x + w + pad_x)
+    y2 = min(img_h, y + h + pad_bottom)
 
-    if roi.size == 0 or w <= 0 or h <= 0:
-        roi = cv2.resize(frame, (48, 48))
-    else:
-        roi = cv2.resize(roi, (48, 48))
+    roi = frame[y1:y2, x1:x2]
+    if roi.size == 0:
+        roi = frame
 
+    return cv2.resize(roi, (48, 48), interpolation=cv2.INTER_AREA)
+
+
+def emotion_finder(face_bb, frame):
+    roi = crop_face(frame, face_bb)
     roi = roi.astype("float32") / 255.0
     roi = img_to_array(roi)
     roi = np.expand_dims(roi, axis=-1)
@@ -112,11 +109,6 @@ def emotion_finder(face_bb, frame):
         interpreter.set_tensor(input_details[0]['index'], roi)
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]
-
-    if smile_found:
-        preds = preds.copy()
-        preds[EMOTIONS.index("happy")] += 0.90
-        preds = preds / np.sum(preds)
 
     label = EMOTIONS[preds.argmax()]
     stress_val, stress_lbl = get_stress_from_emotions(preds)
@@ -130,7 +122,7 @@ def emotion_finder(face_bb, frame):
 # =========================
 
 def process_image_array(frame):
-    frame = imutils.resize(frame, width=500)
+    frame = imutils.resize(frame, width=800)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     with cascade_lock:
@@ -149,16 +141,15 @@ def process_image_array(frame):
     }
 
     if len(faces) > 0:
-        for (x, y, w, h) in faces:
-            label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
-            info = {
-                "emotion": label.title(),
-                "stress_value": float(stress_val),
-                "stress_label": stress_lbl,
-                "emotion_probs": probs_dict
-            }
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            break
+        x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
+        label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
+        info = {
+            "emotion": label.title(),
+            "stress_value": float(stress_val),
+            "stress_label": stress_lbl,
+            "emotion_probs": probs_dict
+        }
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
     else:
         h, w = gray.shape
         label, stress_val, stress_lbl, probs_dict = emotion_finder((0, 0, w, h), gray)
@@ -207,7 +198,7 @@ class VideoCamera(object):
             return jpeg.tobytes()
 
         frame = cv2.flip(frame, 1)
-        frame = imutils.resize(frame, width=500)
+        frame = imutils.resize(frame, width=800)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         with cascade_lock:
@@ -218,7 +209,8 @@ class VideoCamera(object):
                 minSize=(30, 30)
             )
 
-        for (x, y, w, h) in faces:
+        if len(faces) > 0:
+            x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
             label, stress_val, stress_lbl, probs_dict = emotion_finder((x, y, w, h), gray)
 
             global latest_stress_info
